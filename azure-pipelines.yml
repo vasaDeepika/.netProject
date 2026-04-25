@@ -1,41 +1,84 @@
-# ASP.NET
-# Build and test ASP.NET projects.
-# Add steps that publish symbols, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/apps/aspnet/build-aspnet-4
-
 trigger:
 - master
 
 pool:
-  vmImage: 'windows-2019'
+  name: 'SelfHostedWindows'
 
 variables:
-  solution: '**/*.sln'
+  solution: 'PartsUnlimited-aspnet45/PartsUnlimited.sln'
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
+  artifactName: 'drop'
+  azureServiceConnection: 'PartsUnlimited-ServiceConnection'
+  webAppName: 'partsunlimited-webapp'
 
-steps:
-- task: NuGetToolInstaller@0
+stages:
+- stage: Build
+  displayName: 'Build'
+  jobs:
+  - job: BuildJob
+    displayName: 'Restore, build, and package'
+    steps:
+    - checkout: self
 
-- task: NuGetCommand@2
-  inputs:
-    restoreSolution: '$(solution)'
+    - task: NuGetToolInstaller@1
 
-- task: VSBuild@1
-  inputs:
-    solution: '$(solution)'
-    msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactStagingDirectory)"'
-    platform: '$(buildPlatform)'
-    configuration: '$(buildConfiguration)'
+    - task: NuGetCommand@2
+      displayName: 'NuGet restore'
+      inputs:
+        command: 'restore'
+        restoreSolution: '$(solution)'
 
-- task: CopyFiles@2
-  displayName: 'Copy Files'
-  inputs:
-    SourceFolder: '$(build.sourcesdirectory)'
-    Contents: '**/*.json'
-    TargetFolder: '$(build.artifactstagingdirectory)'
+    - task: VSBuild@1
+      displayName: 'Build web package'
+      inputs:
+        solution: '$(solution)'
+        platform: '$(buildPlatform)'
+        configuration: '$(buildConfiguration)'
+        msbuildArgs: >
+          /p:DeployOnBuild=true
+          /p:WebPublishMethod=Package
+          /p:PackageAsSingleFile=true
+          /p:SkipInvalidConfigurations=true
+          /p:PackageLocation="$(Build.ArtifactStagingDirectory)"
 
-- task: PublishBuildArtifacts@1
-  displayName: 'Publish Artifact'
-  inputs:
-    PathtoPublish: '$(build.artifactstagingdirectory)'
+    - task: VSTest@2
+      displayName: 'Run unit tests'
+      inputs:
+        platform: '$(buildPlatform)'
+        configuration: '$(buildConfiguration)'
+        testSelector: 'testAssemblies'
+        testAssemblyVer2: |
+          **\*UnitTests*.dll
+          !**\obj\**
+        searchFolder: '$(System.DefaultWorkingDirectory)'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish build artifact'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: '$(artifactName)'
+
+- stage: Deploy
+  displayName: 'Deploy to Azure App Service'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - deployment: DeployWeb
+    displayName: 'Deploy packaged website'
+    environment: 'partsunlimited-prod'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: '$(artifactName)'
+
+          - task: AzureRmWebAppDeployment@4
+            displayName: 'Deploy to Azure Web App'
+            inputs:
+              ConnectionType: 'AzureRM'
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'webApp'
+              WebAppName: '$(webAppName)'
+              Package: '$(Pipeline.Workspace)/$(artifactName)/**/*.zip'
