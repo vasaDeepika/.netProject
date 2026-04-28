@@ -1,8 +1,7 @@
 trigger:
-- master
+- main
 
-pool:
-  name: 'SelfHostedWindows'
+pool: Default
 
 variables:
   solution: 'PartsUnlimited-aspnet45/PartsUnlimited.sln'
