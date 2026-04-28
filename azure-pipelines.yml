@@ -77,7 +77,7 @@ stages:
             displayName: 'Deploy to Azure Web App'
             inputs:
               ConnectionType: 'AzureRM'
-              azureSubscription: '$(azureServiceConnection)'
+              azureSubscription: 'vasaDeepika'
               appType: 'webApp'
               WebAppName: '$(webAppName)'
               Package: '$(Pipeline.Workspace)/$(artifactName)/**/*.zip'
